@@ -1,0 +1,301 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f7f8fc">
+    <title>SentenceScan — Duplicate Detector</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/">
+            <span class="brand-icon">S</span>
+            <span>SentenceScan<span class="brand-dot">.</span></span>
+        </a>
+        <span class="status"><span class="status-dot"></span> Text analysis tool</span>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <div class="eyebrow">SMART DOCUMENT ANALYSIS</div>
+            <h1>Make every sentence<br><span>count.</span></h1>
+            <p>Find repeated and nearly identical sentences in your text with a single click.</p>
+        </section>
+
+        <section class="workspace">
+            <div class="section-heading">
+                <div>
+                    <h2>Analyze your document</h2>
+                    <p>Paste your text or upload a plain text file to begin.</p>
+                </div>
+                <span class="step-label">STEP 01</span>
+            </div>
+
+            <form id="form">
+                <div class="editor-toolbar">
+                    <label for="text">DOCUMENT TEXT</label>
+                    <button type="button" class="text-button" id="clear">Clear text</button>
+                </div>
+
+                <textarea id="text" placeholder="Paste your document here...
+
+For example:
+Artificial intelligence is changing the world.
+Machine learning helps computers learn from data.
+Artificial intelligence is changing the world." required></textarea>
+
+                <div class="editor-bottom">
+                    <span id="char-count">0 characters</span>
+                    <span id="sentence-count">0 sentences</span>
+                </div>
+
+                <div class="upload-box">
+                    <div class="upload-icon">↑</div>
+                    <div class="upload-copy">
+                        <strong>Upload a document</strong>
+                        <span>Choose a .txt file from your device</span>
+                    </div>
+                    <label class="upload-button" for="file">Browse files</label>
+                    <input id="file" type="file" accept=".txt">
+                </div>
+
+                <div class="settings">
+                    <div>
+                        <label for="threshold">Similarity sensitivity</label>
+                        <p>Higher values detect closer matches.</p>
+                    </div>
+                    <div class="range-control">
+                        <strong id="threshold-value">80%</strong>
+                        <input id="threshold" type="range" min="50" max="95"
+                               value="80" step="5">
+                        <div class="range-labels">
+                            <span>More matches</span>
+                            <span>Closer matches</span>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="analyze-button" id="analyze" type="submit">
+                    <span>Analyze sentences</span><span aria-hidden="true">→</span>
+                </button>
+                <p class="privacy-note">Your document is analyzed locally by this application server.</p>
+            </form>
+        </section>
+
+        <section id="results" class="results-section" hidden>
+            <div class="section-heading">
+                <div>
+                    <div class="eyebrow">ANALYSIS SUMMARY</div>
+                    <h2>Your results</h2>
+                    <p id="result-message">Review the sentence matches below.</p>
+                </div>
+                <button type="button" class="export-button" id="download">
+                    ↓ Export report
+                </button>
+            </div>
+
+            <div class="stats">
+                <article class="stat-card">
+                    <span class="stat-label">Total sentences</span>
+                    <strong id="total">0</strong>
+                    <span class="stat-caption">Identified in document</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Exact duplicates</span>
+                    <strong id="exact">0</strong>
+                    <span class="stat-caption">Repeated sentence pairs</span>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Similar pairs</span>
+                    <strong id="similar">0</strong>
+                    <span class="stat-caption">Potentially repeated content</span>
+                </article>
+            </div>
+
+            <div class="matches-heading">
+                <h3>Detected matches</h3>
+                <span id="match-count">0 matches</span>
+            </div>
+            <div id="matches"></div>
+        </section>
+
+        <footer>
+            <span>SentenceScan</span>
+            <span>Simple, clear document analysis.</span>
+        </footer>
+    </main>
+
+    <script>
+        const form = document.getElementById("form");
+        const textBox = document.getElementById("text");
+        const fileInput = document.getElementById("file");
+        const threshold = document.getElementById("threshold");
+        const results = document.getElementById("results");
+        let latestReport = null;
+
+        function countSentences(text) {
+            const trimmed = text.trim();
+            if (!trimmed) return 0;
+            return trimmed.split(/[.!?]+(?:\s+|$)/)
+                .filter(sentence => sentence.trim()).length;
+        }
+
+        function updateCounts() {
+            document.getElementById("char-count").textContent =
+                `${textBox.value.length.toLocaleString()} characters`;
+            document.getElementById("sentence-count").textContent =
+                `${countSentences(textBox.value)} sentences`;
+        }
+
+        textBox.addEventListener("input", updateCounts);
+
+        threshold.addEventListener("input", () => {
+            document.getElementById("threshold-value").textContent =
+                `${threshold.value}%`;
+        });
+
+        document.getElementById("clear").addEventListener("click", () => {
+            textBox.value = "";
+            fileInput.value = "";
+            updateCounts();
+            textBox.focus();
+        });
+
+        fileInput.addEventListener("change", async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            if (file.size > 5 * 1024 * 1024) {
+                alert("Please choose a text file smaller than 5 MB.");
+                fileInput.value = "";
+                return;
+            }
+
+            textBox.value = await file.text();
+            updateCounts();
+        });
+
+        function addText(parent, tag, className, value) {
+            const element = document.createElement(tag);
+            if (className) element.className = className;
+            element.textContent = value;
+            parent.appendChild(element);
+            return element;
+        }
+
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+
+            if (!textBox.value.trim()) {
+                alert("Please enter some text first.");
+                return;
+            }
+
+            const button = document.getElementById("analyze");
+            button.disabled = true;
+            button.querySelector("span").textContent = "Analyzing document...";
+
+            try {
+                const response = await fetch("/analyze", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        text: textBox.value,
+                        threshold: Number(threshold.value) / 100
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || "Analysis failed.");
+
+                latestReport = data;
+                results.hidden = false;
+
+                document.getElementById("total").textContent = data.total_sentences;
+                document.getElementById("exact").textContent = data.exact_duplicates;
+                document.getElementById("similar").textContent = data.similar_pairs;
+                document.getElementById("match-count").textContent =
+                    `${data.matches.length} ${data.matches.length === 1 ? "match" : "matches"}`;
+
+                document.getElementById("result-message").textContent =
+                    data.matches.length
+                        ? "Review the repeated or similar sentences found in your document."
+                        : "No matching sentence pairs were found at this sensitivity.";
+
+                const container = document.getElementById("matches");
+                container.replaceChildren();
+
+                if (!data.matches.length) {
+                    const empty = document.createElement("div");
+                    empty.className = "empty-state";
+                    addText(empty, "div", "empty-icon", "✓");
+                    addText(empty, "h3", "", "Your document looks clear");
+                    addText(empty, "p", "", "No duplicate or similar sentence pairs were detected.");
+                    container.appendChild(empty);
+                }
+
+                data.matches.forEach(match => {
+                    const card = document.createElement("article");
+                    card.className = "match-card";
+
+                    const top = document.createElement("div");
+                    top.className = "match-top";
+
+                    addText(top, "span", "match-type",
+                        match.type === "Exact duplicate" ? "Exact duplicate" : "Similar sentences");
+
+                    addText(top, "span", "similarity",
+                        `${match.similarity}% match`);
+
+                    card.appendChild(top);
+
+                    const pair = document.createElement("div");
+                    pair.className = "sentence-pair";
+
+                    const first = document.createElement("div");
+                    first.className = "sentence-item";
+                    addText(first, "span", "sentence-label",
+                        `SENTENCE ${match.sentence_1_number}`);
+                    addText(first, "p", "", match.sentence_1);
+
+                    const second = document.createElement("div");
+                    second.className = "sentence-item";
+                    addText(second, "span", "sentence-label",
+                        `SENTENCE ${match.sentence_2_number}`);
+                    addText(second, "p", "", match.sentence_2);
+
+                    pair.append(first, second);
+                    card.appendChild(pair);
+                    container.appendChild(card);
+                });
+
+                results.scrollIntoView({behavior: "smooth", block: "start"});
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                button.disabled = false;
+                button.querySelector("span").textContent = "Analyze sentences";
+            }
+        });
+
+        document.getElementById("download").addEventListener("click", () => {
+            if (!latestReport) return;
+
+            const blob = new Blob(
+                [JSON.stringify(latestReport, null, 2)],
+                {type: "application/json"}
+            );
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "sentencescan-report.json";
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+
+        updateCounts();
+    </script>
+</body>
+</html>
